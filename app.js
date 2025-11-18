@@ -198,7 +198,8 @@ class ARVislamDemo {
 
     requestSensorPermissions() {
         // IMPORTANT: This function is called directly from user gesture (button click)
-        // We must NOT use async/await here to maintain user gesture context
+        // We must start ALL permission requests SYNCHRONOUSLY within the gesture context
+        // Using Promise.all() to request both permissions in parallel
 
         console.log('Requesting sensor permissions...');
 
@@ -210,30 +211,44 @@ class ARVislamDemo {
             return Promise.resolve();
         }
 
-        // On iOS 13+, request both permissions in sequence
-        console.log('Requesting DeviceOrientation permission (iOS 13+)...');
+        // On iOS 13+, request BOTH permissions in PARALLEL
+        // This ensures both requests start within the same user gesture context
+        console.log('Requesting both DeviceOrientation and DeviceMotion permissions in parallel...');
 
-        return DeviceOrientationEvent.requestPermission()
-            .then((orientationState) => {
-                console.log('DeviceOrientation permission result:', orientationState);
+        const permissions = [];
 
-                if (orientationState !== 'granted') {
-                    throw new Error('DeviceOrientation permission denied');
-                }
+        // Start DeviceOrientation permission request
+        permissions.push(
+            DeviceOrientationEvent.requestPermission()
+                .then(state => {
+                    console.log('DeviceOrientation permission result:', state);
+                    return { type: 'orientation', state };
+                })
+        );
 
-                // Request motion permission
-                if (typeof DeviceMotionEvent !== 'undefined' &&
-                    typeof DeviceMotionEvent.requestPermission === 'function') {
-                    console.log('Requesting DeviceMotion permission (iOS 13+)...');
-                    return DeviceMotionEvent.requestPermission();
-                }
-                return 'granted';
-            })
-            .then((motionState) => {
-                console.log('DeviceMotion permission result:', motionState);
+        // Start DeviceMotion permission request (if available)
+        if (typeof DeviceMotionEvent !== 'undefined' &&
+            typeof DeviceMotionEvent.requestPermission === 'function') {
+            permissions.push(
+                DeviceMotionEvent.requestPermission()
+                    .then(state => {
+                        console.log('DeviceMotion permission result:', state);
+                        return { type: 'motion', state };
+                    })
+            );
+        }
 
-                if (motionState !== 'granted') {
-                    throw new Error('DeviceMotion permission denied');
+        // Wait for all permissions to resolve
+        return Promise.all(permissions)
+            .then((results) => {
+                console.log('All permission requests completed:', results);
+
+                // Check if all were granted
+                const allGranted = results.every(result => result.state === 'granted');
+
+                if (!allGranted) {
+                    const denied = results.filter(r => r.state !== 'granted');
+                    throw new Error(`Permission denied: ${denied.map(d => d.type).join(', ')}`);
                 }
 
                 console.log('✓ All sensor permissions granted');
