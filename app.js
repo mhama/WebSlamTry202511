@@ -197,9 +197,10 @@ class ARVislamDemo {
     }
 
     requestSensorPermissions() {
-        // IMPORTANT: This function is called directly from user gesture (button click)
-        // We must start ALL permission requests SYNCHRONOUSLY within the gesture context
-        // Using Promise.all() to request both permissions in parallel
+        // IMPORTANT: Only request DeviceOrientation permission
+        // iOS allows only ONE permission dialog per user gesture
+        // DeviceOrientation is sufficient for basic AR tracking (rotation only)
+        // DeviceMotion (acceleration) will work without explicit permission on most devices
 
         console.log('Requesting sensor permissions...');
 
@@ -211,47 +212,21 @@ class ARVislamDemo {
             return Promise.resolve();
         }
 
-        // On iOS 13+, request BOTH permissions in PARALLEL
-        // This ensures both requests start within the same user gesture context
-        console.log('Requesting both DeviceOrientation and DeviceMotion permissions in parallel...');
+        // Request only DeviceOrientation permission on iOS 13+
+        console.log('Requesting DeviceOrientation permission...');
 
-        const permissions = [];
+        return DeviceOrientationEvent.requestPermission()
+            .then((state) => {
+                console.log('DeviceOrientation permission result:', state);
 
-        // Start DeviceOrientation permission request
-        permissions.push(
-            DeviceOrientationEvent.requestPermission()
-                .then(state => {
-                    console.log('DeviceOrientation permission result:', state);
-                    return { type: 'orientation', state };
-                })
-        );
-
-        // Start DeviceMotion permission request (if available)
-        if (typeof DeviceMotionEvent !== 'undefined' &&
-            typeof DeviceMotionEvent.requestPermission === 'function') {
-            permissions.push(
-                DeviceMotionEvent.requestPermission()
-                    .then(state => {
-                        console.log('DeviceMotion permission result:', state);
-                        return { type: 'motion', state };
-                    })
-            );
-        }
-
-        // Wait for all permissions to resolve
-        return Promise.all(permissions)
-            .then((results) => {
-                console.log('All permission requests completed:', results);
-
-                // Check if all were granted
-                const allGranted = results.every(result => result.state === 'granted');
-
-                if (!allGranted) {
-                    const denied = results.filter(r => r.state !== 'granted');
-                    throw new Error(`Permission denied: ${denied.map(d => d.type).join(', ')}`);
+                if (state !== 'granted') {
+                    throw new Error('DeviceOrientation permission denied');
                 }
 
-                console.log('✓ All sensor permissions granted');
+                console.log('✓ DeviceOrientation permission granted');
+
+                // DeviceMotion will work automatically on most devices
+                // If it doesn't, the app will still work with orientation-only tracking
             })
             .catch((error) => {
                 console.error('Sensor permission error:', error);
