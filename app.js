@@ -75,59 +75,66 @@ class ARVislamDemo {
         console.log('Debug mode:', this.debugMode);
     }
 
-    async start() {
-        try {
-            this.statusEl.textContent = 'センサー権限を要求中...';
+    start() {
+        // IMPORTANT: Must NOT use async/await in the button click handler
+        // because it breaks the user gesture context needed for sensor permissions
 
-            // Request sensor permissions FIRST (while in user gesture context)
-            // This must happen before any async operations like getUserMedia
-            await this.requestSensorPermissions();
+        this.statusEl.textContent = 'センサー権限を要求中...';
+        console.log('Starting AR initialization...');
 
-            this.statusEl.textContent = 'カメラにアクセス中...';
+        // Request sensor permissions synchronously (must be in user gesture context)
+        this.requestSensorPermissions()
+            .then(() => {
+                this.statusEl.textContent = 'カメラにアクセス中...';
+                console.log('✓ Sensor permissions granted, requesting camera...');
 
-            // Request camera access (rear camera)
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: 'environment', // rear camera
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 }
-                },
-                audio: false
+                // Now request camera access
+                return navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    },
+                    audio: false
+                });
+            })
+            .then((stream) => {
+                this.video.srcObject = stream;
+                this.video.style.display = 'block';
+                this.hasCamera = true;
+                this.updateDebugIndicator('camera', true, 'アクティブ');
+                console.log('✓ Camera active:', stream.getVideoTracks()[0].getSettings());
+
+                // Wait for video to be ready
+                return new Promise((resolve) => {
+                    this.video.onloadedmetadata = () => {
+                        this.video.play();
+                        resolve();
+                    };
+                });
+            })
+            .then(() => {
+                this.statusEl.textContent = 'Three.jsシーンを初期化中...';
+                this.initThreeJS();
+                this.updateDebugIndicator('threejs', true, 'アクティブ');
+                console.log('✓ Three.js initialized');
+
+                this.statusEl.textContent = 'センサーを初期化中...';
+                this.attachSensorListeners();
+                console.log('✓ Sensor listeners attached');
+
+                this.statusEl.textContent = 'AR実行中 - デバイスを動かしてください';
+                this.startBtn.style.display = 'none';
+                this.placeBtn.style.display = 'block';
+
+                this.isRunning = true;
+                this.animate();
+            })
+            .catch((error) => {
+                console.error('Error starting AR:', error);
+                this.statusEl.textContent = `エラー: ${error.message}`;
+                this.updateDebugIndicator('sensor', false, 'エラー');
             });
-
-            this.video.srcObject = stream;
-            this.video.style.display = 'block';
-            this.hasCamera = true;
-            this.updateDebugIndicator('camera', true, 'アクティブ');
-            console.log('Camera active:', stream.getVideoTracks()[0].getSettings());
-
-            // Wait for video to be ready
-            await new Promise((resolve) => {
-                this.video.onloadedmetadata = () => {
-                    this.video.play();
-                    resolve();
-                };
-            });
-
-            this.statusEl.textContent = 'Three.jsシーンを初期化中...';
-            this.initThreeJS();
-            this.updateDebugIndicator('threejs', true, 'アクティブ');
-            console.log('Three.js initialized');
-
-            this.statusEl.textContent = 'センサーを初期化中...';
-            this.attachSensorListeners();
-
-            this.statusEl.textContent = 'AR実行中 - デバイスを動かしてください';
-            this.startBtn.style.display = 'none';
-            this.placeBtn.style.display = 'block';
-
-            this.isRunning = true;
-            this.animate();
-
-        } catch (error) {
-            console.error('Error starting AR:', error);
-            this.statusEl.textContent = `エラー: ${error.message}`;
-        }
     }
 
     initThreeJS() {
@@ -189,52 +196,59 @@ class ARVislamDemo {
         });
     }
 
-    async requestSensorPermissions() {
+    requestSensorPermissions() {
+        // IMPORTANT: This function is called directly from user gesture (button click)
+        // We must NOT use async/await here to maintain user gesture context
+
         console.log('Requesting sensor permissions...');
 
-        let orientationPermissionGranted = true;
-        let motionPermissionGranted = true;
+        const needsPermission = typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function';
 
-        // Request DeviceOrientation permission on iOS 13+
-        if (typeof DeviceOrientationEvent !== 'undefined' &&
-            typeof DeviceOrientationEvent.requestPermission === 'function') {
-            try {
-                console.log('Requesting DeviceOrientation permission...');
-                const permissionState = await DeviceOrientationEvent.requestPermission();
-                console.log('DeviceOrientation permission:', permissionState);
-                if (permissionState !== 'granted') {
-                    orientationPermissionGranted = false;
-                    console.error('DeviceOrientation permission denied');
+        if (!needsPermission) {
+            console.log('✓ No permission request needed (not iOS 13+)');
+            return Promise.resolve();
+        }
+
+        // On iOS 13+, request both permissions in sequence
+        console.log('Requesting DeviceOrientation permission (iOS 13+)...');
+
+        return DeviceOrientationEvent.requestPermission()
+            .then((orientationState) => {
+                console.log('DeviceOrientation permission result:', orientationState);
+
+                if (orientationState !== 'granted') {
+                    throw new Error('DeviceOrientation permission denied');
                 }
-            } catch (error) {
-                console.error('Error requesting DeviceOrientation permission:', error);
-                orientationPermissionGranted = false;
-            }
-        }
 
-        // Request DeviceMotion permission on iOS 13+
-        if (typeof DeviceMotionEvent !== 'undefined' &&
-            typeof DeviceMotionEvent.requestPermission === 'function') {
-            try {
-                console.log('Requesting DeviceMotion permission...');
-                const permissionState = await DeviceMotionEvent.requestPermission();
-                console.log('DeviceMotion permission:', permissionState);
-                if (permissionState !== 'granted') {
-                    motionPermissionGranted = false;
-                    console.error('DeviceMotion permission denied');
+                // Request motion permission
+                if (typeof DeviceMotionEvent !== 'undefined' &&
+                    typeof DeviceMotionEvent.requestPermission === 'function') {
+                    console.log('Requesting DeviceMotion permission (iOS 13+)...');
+                    return DeviceMotionEvent.requestPermission();
                 }
-            } catch (error) {
-                console.error('Error requesting DeviceMotion permission:', error);
-                motionPermissionGranted = false;
-            }
-        }
+                return 'granted';
+            })
+            .then((motionState) => {
+                console.log('DeviceMotion permission result:', motionState);
 
-        if (!orientationPermissionGranted || !motionPermissionGranted) {
-            this.updateDebugIndicator('sensor', false, '権限なし');
-            throw new Error('センサー権限が拒否されました');
-        }
+                if (motionState !== 'granted') {
+                    throw new Error('DeviceMotion permission denied');
+                }
 
-        console.log('✓ Sensor permissions granted');
+                console.log('✓ All sensor permissions granted');
+            })
+            .catch((error) => {
+                console.error('Sensor permission error:', error);
+                this.updateDebugIndicator('sensor', false, '権限なし');
+
+                // More user-friendly error messages
+                if (error.name === 'NotAllowedError') {
+                    throw new Error('センサー権限が拒否されました。ページをリロードして再試行してください。');
+                } else {
+                    throw error;
+                }
+            });
     }
 
     attachSensorListeners() {
