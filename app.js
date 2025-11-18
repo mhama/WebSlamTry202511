@@ -336,22 +336,39 @@ class ARVislamDemo {
 
     updateCameraFromSensors() {
         // Convert device orientation to camera rotation
-        // This is a simplified SLAM-like tracking using IMU data
+        // DeviceOrientation angles:
+        //   alpha: rotation around Z axis (compass direction, 0-360)
+        //   beta: rotation around X axis (front-to-back tilt, -180 to 180)
+        //   gamma: rotation around Y axis (left-to-right tilt, -90 to 90)
 
-        const alpha = THREE.MathUtils.degToRad(this.orientation.alpha);
-        const beta = THREE.MathUtils.degToRad(this.orientation.beta);
-        const gamma = THREE.MathUtils.degToRad(this.orientation.gamma);
+        // For AR camera in portrait mode, we need to:
+        // 1. Apply the device rotations to match Three.js coordinate system
+        // 2. Account for the device being held vertically (portrait mode)
 
-        // Apply rotations (simplified)
-        // In a real VISLAM system, this would be fused with visual features
-        this.camera.rotation.set(
-            beta,
-            alpha,
-            -gamma,
-            'YXZ'
+        const alpha = THREE.MathUtils.degToRad(this.orientation.alpha || 0);
+        const beta = THREE.MathUtils.degToRad(this.orientation.beta || 0);
+        const gamma = THREE.MathUtils.degToRad(this.orientation.gamma || 0);
+
+        // Create Euler rotation in the correct order for AR camera
+        // For portrait mode (device held vertically):
+        // - Pitch (up/down): comes from beta (X rotation)
+        // - Yaw (left/right): comes from alpha (Z rotation)
+        // - Roll (screen rotation): comes from gamma (Y rotation)
+
+        // Apply rotations in YXZ order which works well for device orientation
+        const euler = new THREE.Euler();
+
+        // Correct mapping for portrait AR mode:
+        euler.set(
+            beta - Math.PI / 2,  // X: Pitch - offset by 90° for vertical device
+            alpha,               // Y: Yaw - compass direction
+            -gamma,              // Z: Roll - screen tilt (negated)
+            'YXZ'                // Apply in YXZ order
         );
 
-        // Simple dead reckoning from acceleration
+        this.camera.quaternion.setFromEuler(euler);
+
+        // Simple dead reckoning from acceleration (optional, can be disabled)
         // In a real VISLAM system, this would be corrected by visual odometry
         const currentTime = Date.now();
         const dt = (currentTime - this.lastTime) / 1000; // delta time in seconds
