@@ -96,6 +96,114 @@
             font-family: monospace;
             font-size: 11px;
         }
+
+        #debug-panel {
+            position: absolute;
+            top: 120px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.85);
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 11px;
+            z-index: 100;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        #debug-panel h3 {
+            color: #00ffff;
+            font-size: 13px;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #00ffff;
+            padding-bottom: 4px;
+        }
+
+        .debug-section {
+            margin-bottom: 12px;
+        }
+
+        .debug-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 3px 0;
+        }
+
+        .debug-label {
+            color: #ffff00;
+        }
+
+        .debug-value {
+            color: #00ff00;
+            text-align: right;
+        }
+
+        .indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+
+        .indicator.active {
+            background: #00ff00;
+            box-shadow: 0 0 10px #00ff00;
+        }
+
+        .indicator.inactive {
+            background: #ff0000;
+        }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            pointer-events: none;
+            z-index: 99;
+        }
+
+        #crosshair::before,
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(0, 255, 0, 0.8);
+        }
+
+        #crosshair::before {
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            transform: translateY(-50%);
+        }
+
+        #crosshair::after {
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            transform: translateX(-50%);
+        }
+
+        #toggle-debug {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 10px 15px;
+            font-size: 12px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: 1px solid #00ff00;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 101;
+        }
     </style>
 </head>
 <body>
@@ -103,10 +211,97 @@
         <video id="video" playsinline autoplay></video>
         <canvas id="canvas"></canvas>
 
+        <div id="crosshair"></div>
+
+        <button id="toggle-debug">デバッグON/OFF</button>
+
         <div id="info">
             <div><strong>WebAR VISLAM Demo</strong></div>
             <div class="status" id="status">初期化中...</div>
             <div id="orientation-data"></div>
+        </div>
+
+        <div id="debug-panel" style="display:none;">
+            <h3>システム状態</h3>
+            <div class="debug-section">
+                <div class="debug-row">
+                    <span class="debug-label">カメラ:</span>
+                    <span class="debug-value"><span class="indicator inactive" id="camera-indicator"></span><span id="camera-status">待機中</span></span>
+                </div>
+                <div class="debug-row">
+                    <span class="debug-label">Three.js:</span>
+                    <span class="debug-value"><span class="indicator inactive" id="threejs-indicator"></span><span id="threejs-status">待機中</span></span>
+                </div>
+                <div class="debug-row">
+                    <span class="debug-label">センサー:</span>
+                    <span class="debug-value"><span class="indicator inactive" id="sensor-indicator"></span><span id="sensor-status">待機中</span></span>
+                </div>
+                <div class="debug-row">
+                    <span class="debug-label">FPS:</span>
+                    <span class="debug-value" id="fps">0</span>
+                </div>
+            </div>
+
+            <h3>カメラ位置・回転</h3>
+            <div class="debug-section">
+                <div class="debug-row">
+                    <span class="debug-label">Position:</span>
+                    <span class="debug-value" id="cam-position">x:0 y:0 z:0</span>
+                </div>
+                <div class="debug-row">
+                    <span class="debug-label">Rotation:</span>
+                    <span class="debug-value" id="cam-rotation">x:0 y:0 z:0</span>
+                </div>
+            </div>
+
+            <h3>センサーデータ</h3>
+            <div class="debug-section">
+                <div class="debug-row">
+                    <span class="debug-label">Orientation α:</span>
+                    <span class="debug-value" id="sensor-alpha">0°</span>
+                </div>
+                <div class="debug-row">
+                    <span class="debug-label">Orientation β:</span>
+                    <span class="debug-value" id="sensor-beta">0°</span>
+                </div>
+                <div class="debug-row">
+                    <span class="debug-label">Orientation γ:</span>
+                    <span class="debug-value" id="sensor-gamma">0°</span>
+                </div>
+                <div class="debug-row">
+                    <span class="debug-label">Accel X:</span>
+                    <span class="debug-value" id="accel-x">0</span>
+                </div>
+                <div class="debug-row">
+                    <span class="debug-label">Accel Y:</span>
+                    <span class="debug-value" id="accel-y">0</span>
+                </div>
+                <div class="debug-row">
+                    <span class="debug-label">Accel Z:</span>
+                    <span class="debug-value" id="accel-z">0</span>
+                </div>
+            </div>
+
+            <h3>オブジェクト</h3>
+            <div class="debug-section">
+                <div class="debug-row">
+                    <span class="debug-label">オブジェクト数:</span>
+                    <span class="debug-value" id="object-count">0</span>
+                </div>
+                <div id="object-list"></div>
+            </div>
+
+            <h3>レンダリング</h3>
+            <div class="debug-section">
+                <div class="debug-row">
+                    <span class="debug-label">Render calls:</span>
+                    <span class="debug-value" id="render-count">0</span>
+                </div>
+                <div class="debug-row">
+                    <span class="debug-label">Canvas size:</span>
+                    <span class="debug-value" id="canvas-size">0x0</span>
+                </div>
+            </div>
         </div>
 
         <div id="controls">

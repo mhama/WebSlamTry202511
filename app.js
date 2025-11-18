@@ -8,6 +8,10 @@ class ARVislamDemo {
         this.startBtn = document.getElementById('startBtn');
         this.placeBtn = document.getElementById('placeBtn');
 
+        // Debug UI elements
+        this.debugPanel = document.getElementById('debug-panel');
+        this.toggleDebugBtn = document.getElementById('toggle-debug');
+
         // Three.js components
         this.scene = null;
         this.camera = null;
@@ -23,8 +27,17 @@ class ARVislamDemo {
         this.velocity = { x: 0, y: 0, z: 0 };
         this.lastTime = Date.now();
 
+        // Performance tracking
+        this.frameCount = 0;
+        this.lastFpsUpdate = Date.now();
+        this.currentFps = 0;
+        this.renderCount = 0;
+
+        // State flags
         this.isRunning = false;
         this.hasCamera = false;
+        this.hasSensors = false;
+        this.debugMode = false;
 
         this.init();
     }
@@ -32,6 +45,7 @@ class ARVislamDemo {
     init() {
         this.startBtn.addEventListener('click', () => this.start());
         this.placeBtn.addEventListener('click', () => this.placeObject());
+        this.toggleDebugBtn.addEventListener('click', () => this.toggleDebug());
 
         // Check for sensor support
         if (window.DeviceOrientationEvent) {
@@ -39,6 +53,14 @@ class ARVislamDemo {
         } else {
             this.statusEl.textContent = '警告: デバイスの向き検出が利用できません。';
         }
+
+        console.log('ARVislamDemo initialized');
+    }
+
+    toggleDebug() {
+        this.debugMode = !this.debugMode;
+        this.debugPanel.style.display = this.debugMode ? 'block' : 'none';
+        console.log('Debug mode:', this.debugMode);
     }
 
     async start() {
@@ -58,6 +80,8 @@ class ARVislamDemo {
             this.video.srcObject = stream;
             this.video.style.display = 'block';
             this.hasCamera = true;
+            this.updateDebugIndicator('camera', true, 'アクティブ');
+            console.log('Camera active:', stream.getVideoTracks()[0].getSettings());
 
             // Wait for video to be ready
             await new Promise((resolve) => {
@@ -69,6 +93,8 @@ class ARVislamDemo {
 
             this.statusEl.textContent = 'Three.jsシーンを初期化中...';
             this.initThreeJS();
+            this.updateDebugIndicator('threejs', true, 'アクティブ');
+            console.log('Three.js initialized');
 
             this.statusEl.textContent = 'センサーを初期化中...';
             await this.initSensors();
@@ -119,8 +145,23 @@ class ARVislamDemo {
         gridHelper.material.opacity = 0.3;
         this.scene.add(gridHelper);
 
-        // Add initial object
-        this.placeObject();
+        // Add axis helper for debugging
+        const axesHelper = new THREE.AxesHelper(2);
+        axesHelper.position.set(0, 0, -3);
+        this.scene.add(axesHelper);
+
+        // Add a large bright test object to ensure visibility
+        const testGeometry = new THREE.SphereGeometry(0.5, 32, 32);
+        const testMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff00ff,
+            wireframe: false
+        });
+        const testMesh = new THREE.Mesh(testGeometry, testMaterial);
+        testMesh.position.set(0, 0, -3);
+        this.scene.add(testMesh);
+        this.objects.push(testMesh);
+
+        console.log('Added test sphere at (0, 0, -3)');
 
         // Handle window resize
         window.addEventListener('resize', () => {
@@ -150,6 +191,12 @@ class ARVislamDemo {
             this.orientation.beta = event.beta || 0;   // X-axis rotation (-180 to 180)
             this.orientation.gamma = event.gamma || 0; // Y-axis rotation (-90 to 90)
 
+            if (!this.hasSensors) {
+                this.hasSensors = true;
+                this.updateDebugIndicator('sensor', true, 'アクティブ');
+                console.log('Orientation sensor active');
+            }
+
             this.updateOrientationDisplay();
         }, true);
 
@@ -161,6 +208,24 @@ class ARVislamDemo {
                 this.acceleration.z = event.accelerationIncludingGravity.z || 0;
             }
         }, true);
+
+        console.log('Sensor listeners attached');
+    }
+
+    updateDebugIndicator(type, active, statusText) {
+        const indicator = document.getElementById(`${type}-indicator`);
+        const status = document.getElementById(`${type}-status`);
+
+        if (indicator && status) {
+            if (active) {
+                indicator.classList.remove('inactive');
+                indicator.classList.add('active');
+            } else {
+                indicator.classList.remove('active');
+                indicator.classList.add('inactive');
+            }
+            status.textContent = statusText;
+        }
     }
 
     updateOrientationDisplay() {
@@ -169,6 +234,21 @@ class ARVislamDemo {
             β: ${this.orientation.beta.toFixed(1)}°
             γ: ${this.orientation.gamma.toFixed(1)}°
         `;
+
+        // Update debug panel sensor data
+        this.updateDebugElement('sensor-alpha', `${this.orientation.alpha.toFixed(1)}°`);
+        this.updateDebugElement('sensor-beta', `${this.orientation.beta.toFixed(1)}°`);
+        this.updateDebugElement('sensor-gamma', `${this.orientation.gamma.toFixed(1)}°`);
+        this.updateDebugElement('accel-x', this.acceleration.x.toFixed(2));
+        this.updateDebugElement('accel-y', this.acceleration.y.toFixed(2));
+        this.updateDebugElement('accel-z', this.acceleration.z.toFixed(2));
+    }
+
+    updateDebugElement(id, value) {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = value;
+        }
     }
 
     updateCameraFromSensors() {
@@ -258,6 +338,24 @@ class ARVislamDemo {
         this.objects.push(mesh);
 
         this.statusEl.textContent = `AR実行中 - オブジェクト数: ${this.objects.length}`;
+        this.updateDebugElement('object-count', this.objects.length);
+
+        console.log(`Placed object at (${mesh.position.x.toFixed(2)}, ${mesh.position.y.toFixed(2)}, ${mesh.position.z.toFixed(2)})`);
+        this.updateObjectList();
+    }
+
+    updateObjectList() {
+        const listEl = document.getElementById('object-list');
+        if (!listEl) return;
+
+        listEl.innerHTML = this.objects.map((obj, index) => `
+            <div class="debug-row" style="font-size: 10px;">
+                <span class="debug-label">#${index}:</span>
+                <span class="debug-value">
+                    (${obj.position.x.toFixed(1)}, ${obj.position.y.toFixed(1)}, ${obj.position.z.toFixed(1)})
+                </span>
+            </div>
+        `).join('');
     }
 
     animate() {
@@ -265,8 +363,28 @@ class ARVislamDemo {
 
         requestAnimationFrame(() => this.animate());
 
+        // Update FPS counter
+        this.frameCount++;
+        const now = Date.now();
+        if (now - this.lastFpsUpdate >= 1000) {
+            this.currentFps = this.frameCount;
+            this.frameCount = 0;
+            this.lastFpsUpdate = now;
+            this.updateDebugElement('fps', this.currentFps);
+        }
+
         // Update camera based on sensor data
         this.updateCameraFromSensors();
+
+        // Update debug info
+        if (this.camera) {
+            this.updateDebugElement('cam-position',
+                `x:${this.camera.position.x.toFixed(2)} y:${this.camera.position.y.toFixed(2)} z:${this.camera.position.z.toFixed(2)}`
+            );
+            this.updateDebugElement('cam-rotation',
+                `x:${THREE.MathUtils.radToDeg(this.camera.rotation.x).toFixed(1)}° y:${THREE.MathUtils.radToDeg(this.camera.rotation.y).toFixed(1)}° z:${THREE.MathUtils.radToDeg(this.camera.rotation.z).toFixed(1)}°`
+            );
+        }
 
         // Animate objects
         this.objects.forEach(obj => {
@@ -279,6 +397,15 @@ class ARVislamDemo {
 
         // Render scene
         this.renderer.render(this.scene, this.camera);
+        this.renderCount++;
+
+        // Update render count every 60 frames
+        if (this.renderCount % 60 === 0) {
+            this.updateDebugElement('render-count', this.renderCount);
+            this.updateDebugElement('canvas-size',
+                `${this.canvas.width}x${this.canvas.height}`
+            );
+        }
     }
 }
 
