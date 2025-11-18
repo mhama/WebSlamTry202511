@@ -77,6 +77,12 @@ class ARVislamDemo {
 
     async start() {
         try {
+            this.statusEl.textContent = 'センサー権限を要求中...';
+
+            // Request sensor permissions FIRST (while in user gesture context)
+            // This must happen before any async operations like getUserMedia
+            await this.requestSensorPermissions();
+
             this.statusEl.textContent = 'カメラにアクセス中...';
 
             // Request camera access (rear camera)
@@ -109,7 +115,7 @@ class ARVislamDemo {
             console.log('Three.js initialized');
 
             this.statusEl.textContent = 'センサーを初期化中...';
-            await this.initSensors();
+            this.attachSensorListeners();
 
             this.statusEl.textContent = 'AR実行中 - デバイスを動かしてください';
             this.startBtn.style.display = 'none';
@@ -183,8 +189,8 @@ class ARVislamDemo {
         });
     }
 
-    async initSensors() {
-        console.log('Initializing sensors...');
+    async requestSensorPermissions() {
+        console.log('Requesting sensor permissions...');
 
         let orientationPermissionGranted = true;
         let motionPermissionGranted = true;
@@ -198,7 +204,6 @@ class ARVislamDemo {
                 console.log('DeviceOrientation permission:', permissionState);
                 if (permissionState !== 'granted') {
                     orientationPermissionGranted = false;
-                    this.statusEl.textContent = 'エラー: センサー権限が拒否されました';
                     console.error('DeviceOrientation permission denied');
                 }
             } catch (error) {
@@ -216,7 +221,6 @@ class ARVislamDemo {
                 console.log('DeviceMotion permission:', permissionState);
                 if (permissionState !== 'granted') {
                     motionPermissionGranted = false;
-                    this.statusEl.textContent = 'エラー: モーション権限が拒否されました';
                     console.error('DeviceMotion permission denied');
                 }
             } catch (error) {
@@ -227,8 +231,14 @@ class ARVislamDemo {
 
         if (!orientationPermissionGranted || !motionPermissionGranted) {
             this.updateDebugIndicator('sensor', false, '権限なし');
-            return;
+            throw new Error('センサー権限が拒否されました');
         }
+
+        console.log('✓ Sensor permissions granted');
+    }
+
+    attachSensorListeners() {
+        console.log('Attaching sensor listeners...');
 
         // Device orientation (gyroscope + magnetometer)
         window.addEventListener('deviceorientation', (event) => {
@@ -269,7 +279,7 @@ class ARVislamDemo {
             }
         }, true);
 
-        console.log('Sensor listeners attached');
+        console.log('✓ Sensor listeners attached');
 
         // Set a timeout to check if sensors are working
         setTimeout(() => {
