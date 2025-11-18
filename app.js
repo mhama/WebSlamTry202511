@@ -39,6 +39,9 @@ class ARVislamDemo {
         this.hasSensors = false;
         this.debugMode = false;
 
+        // Debug counters
+        this.sensorEventCount = 0;
+
         this.init();
     }
 
@@ -46,6 +49,15 @@ class ARVislamDemo {
         this.startBtn.addEventListener('click', () => this.start());
         this.placeBtn.addEventListener('click', () => this.placeObject());
         this.toggleDebugBtn.addEventListener('click', () => this.toggleDebug());
+
+        // Log device and browser information
+        console.log('=== ARVislamDemo Initialization ===');
+        console.log('User Agent:', navigator.userAgent);
+        console.log('Platform:', navigator.platform);
+        console.log('DeviceOrientationEvent support:', !!window.DeviceOrientationEvent);
+        console.log('DeviceMotionEvent support:', !!window.DeviceMotionEvent);
+        console.log('DeviceOrientationEvent.requestPermission:', typeof DeviceOrientationEvent?.requestPermission);
+        console.log('DeviceMotionEvent.requestPermission:', typeof DeviceMotionEvent?.requestPermission);
 
         // Check for sensor support
         if (window.DeviceOrientationEvent) {
@@ -172,29 +184,77 @@ class ARVislamDemo {
     }
 
     async initSensors() {
-        // Request motion permissions on iOS 13+
+        console.log('Initializing sensors...');
+
+        let orientationPermissionGranted = true;
+        let motionPermissionGranted = true;
+
+        // Request DeviceOrientation permission on iOS 13+
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+            try {
+                console.log('Requesting DeviceOrientation permission...');
+                const permissionState = await DeviceOrientationEvent.requestPermission();
+                console.log('DeviceOrientation permission:', permissionState);
+                if (permissionState !== 'granted') {
+                    orientationPermissionGranted = false;
+                    this.statusEl.textContent = 'エラー: センサー権限が拒否されました';
+                    console.error('DeviceOrientation permission denied');
+                }
+            } catch (error) {
+                console.error('Error requesting DeviceOrientation permission:', error);
+                orientationPermissionGranted = false;
+            }
+        }
+
+        // Request DeviceMotion permission on iOS 13+
         if (typeof DeviceMotionEvent !== 'undefined' &&
             typeof DeviceMotionEvent.requestPermission === 'function') {
             try {
+                console.log('Requesting DeviceMotion permission...');
                 const permissionState = await DeviceMotionEvent.requestPermission();
+                console.log('DeviceMotion permission:', permissionState);
                 if (permissionState !== 'granted') {
-                    throw new Error('Motion permission not granted');
+                    motionPermissionGranted = false;
+                    this.statusEl.textContent = 'エラー: モーション権限が拒否されました';
+                    console.error('DeviceMotion permission denied');
                 }
             } catch (error) {
-                console.error('Error requesting motion permission:', error);
+                console.error('Error requesting DeviceMotion permission:', error);
+                motionPermissionGranted = false;
             }
+        }
+
+        if (!orientationPermissionGranted || !motionPermissionGranted) {
+            this.updateDebugIndicator('sensor', false, '権限なし');
+            return;
         }
 
         // Device orientation (gyroscope + magnetometer)
         window.addEventListener('deviceorientation', (event) => {
+            // Log only first 5 events to avoid console spam
+            if (this.sensorEventCount < 5) {
+                console.log(`DeviceOrientation event #${this.sensorEventCount + 1}:`, {
+                    alpha: event.alpha,
+                    beta: event.beta,
+                    gamma: event.gamma,
+                    absolute: event.absolute
+                });
+                this.sensorEventCount++;
+            }
+
             this.orientation.alpha = event.alpha || 0; // Z-axis rotation (0-360)
             this.orientation.beta = event.beta || 0;   // X-axis rotation (-180 to 180)
             this.orientation.gamma = event.gamma || 0; // Y-axis rotation (-90 to 90)
 
-            if (!this.hasSensors) {
+            if (!this.hasSensors && (event.alpha !== null || event.beta !== null || event.gamma !== null)) {
                 this.hasSensors = true;
                 this.updateDebugIndicator('sensor', true, 'アクティブ');
-                console.log('Orientation sensor active');
+                console.log('✓ Orientation sensor ACTIVE - values detected:', {
+                    alpha: event.alpha?.toFixed(1),
+                    beta: event.beta?.toFixed(1),
+                    gamma: event.gamma?.toFixed(1)
+                });
             }
 
             this.updateOrientationDisplay();
@@ -210,6 +270,15 @@ class ARVislamDemo {
         }, true);
 
         console.log('Sensor listeners attached');
+
+        // Set a timeout to check if sensors are working
+        setTimeout(() => {
+            if (!this.hasSensors) {
+                console.warn('Sensors not responding after 2 seconds');
+                this.updateDebugIndicator('sensor', false, '応答なし');
+                this.statusEl.textContent = '警告: センサーが応答していません。デバイスを動かしてください。';
+            }
+        }, 2000);
     }
 
     updateDebugIndicator(type, active, statusText) {
